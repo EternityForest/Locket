@@ -1,0 +1,58 @@
+name: flutter_autofill_service_example
+description: Demonstrates how to use the flutter_autofill_service plugin.
+publish_to: 'none'
+
+environment:
+  sdk: '>=2.12.0 <3.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  logging: ^1.0.1
+  logging_appenders: ^1.0.0
+  flutter_sodium: null
+
+  path_provider: null
+
+  sqlite3: ^1.7.1
+
+  shared_storage:
+    git:
+      url: https://github.com/lakscastro/shared-storage.git
+      ref: release
+
+  permission_handler: null
+  file_picker: null
+
+  biometric_storage:
+    git:
+      url: https://github.com/kee-org/biometric_storage.git
+      ref: keevault
+
+  flutter_autofill_service:
+    git:
+      url: https://github.com/kee-org/flutter_autofill_service.git
+      ref: master
+
+  receive_intent:
+    git:
+      url: https://github.com/kee-org/receive_intent
+      ref: master
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
