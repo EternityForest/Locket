@@ -64,12 +64,6 @@ class _LoginActivityState extends State<LoginActivity> with WidgetsBindingObserv
                 },
               ),
               ElevatedButton(
-                child: const Text('Back'),
-                onPressed: () async {
-                  Navigator.pop(context);
-                },
-              ),
-              ElevatedButton(
                 child: const Text('Open Vault'),
                 onPressed: () async {
                   await database.init(pwd);

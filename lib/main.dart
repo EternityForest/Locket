@@ -12,15 +12,17 @@ import 'vault.dart' as vault;
 
 final _logger = Logger('main');
 
-void main() {
+void main() async{
   Logger.root.level = Level.ALL;
   PrintAppender().attachToLogger(Logger.root);
   _logger.info('Initialized logger.');
+
   runApp(MyApp());
+
 }
 
-void autofillEntryPoint() {
-  card.autofillEntryPoint();
+void autofillEntryPoint() async {
+  await card.autofillEntryPoint();
 }
 
 class MyApp extends StatelessWidget {
@@ -38,6 +40,38 @@ class MyHome extends StatefulWidget {
 }
 
 class _MyHomeState extends State<MyHome> with WidgetsBindingObserver {
+
+
+  //Switch to the autofill activity as needed.
+  Future<void> asyncpostinit() async{
+    var _autofillMetadata = await AutofillService().getAutofillMetadata();
+    bool _saveRequested = _autofillMetadata?.saveInfo != null;
+    bool _fillRequestedAutomatic = await AutofillService()
+        .fillRequestedAutomatic;
+    bool _fillRequestedInteractive =
+        await AutofillService().fillRequestedInteractive;
+
+    if (_fillRequestedAutomatic || _saveRequested || _fillRequestedInteractive) {
+      //Login then card
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (context) => const login.LoginActivity()),
+      ).then((value) async{
+        var x = await card.autofillEntryPoint();
+        if(x==null)
+        {
+          return;
+        }
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (context) => x ),
+        );
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +81,7 @@ class _MyHomeState extends State<MyHome> with WidgetsBindingObserver {
 
   // Platform messages are asynchronous, so we initialize in an async method.
   Future<void> _updateStatus() async {
+
     setState(() {});
   }
 
@@ -61,11 +96,15 @@ class _MyHomeState extends State<MyHome> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
       await _updateStatus();
+      await asyncpostinit();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+
+
+
     _logger.info(
         'Building AppState. defaultRouteName:${WidgetsBinding.instance.window.defaultRouteName}');
 
@@ -80,7 +119,7 @@ class _MyHomeState extends State<MyHome> with WidgetsBindingObserver {
             children: <Widget>[
               ElevatedButton(
                   child: const Text('Log in'),
-                  onPressed: (){
+                  onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -107,16 +146,18 @@ class _MyHomeState extends State<MyHome> with WidgetsBindingObserver {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (context) =>
-                                  const vault.Vault()),
+                              builder: (context) => const vault.Vault()),
                         );
                       })),
-              ElevatedButton(
-                  child: const Text('Lock Vault'),
-                  onPressed: () async{
-                    database.knownKeys.clear();
-                    await _updateStatus();
-                  })
+              Visibility(
+                  visible: database.knownKeys.containsKey('current'),
+                  child: ElevatedButton(
+                      child: const Text('Lock Vault'),
+                      onPressed: () async {
+                        database.knownKeys.clear();
+                        database.cardsInVault.clear();
+                        await _updateStatus();
+                      }))
             ],
           ),
         ),

@@ -1,97 +1,206 @@
 import 'dart:convert';
-
 import 'package:flutter_autofill_service/flutter_autofill_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_autofill_service_example/main.dart';
 import 'package:logging/logging.dart';
 import 'package:logging_appenders/logging_appenders.dart';
+import 'package:flutter/services.dart';
+import 'dart:convert' as conv;
 
 import 'database.dart' as database;
 
 final _logger = Logger('main');
 
-void autofillEntryPoint() {
-  Logger.root.level = Level.ALL;
-  PrintAppender().attachToLogger(Logger.root);
-  _logger.info('Initialized logger.');
-  runApp(MyApp());
+
+List<String> processdomains(Set<AutofillWebDomain>? d){
+  List<String> d2=[];
+  if(d==null)
+    {
+      return d2;
+    }
+
+  for (var i in d)
+    {
+      d2.add( (i.scheme ?? 'https') + "://" + i.domain);
+    }
+
+  return d2;
 }
 
-class AutofillActivity extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(home: CardActivity(true, {}, ''));
-  }
-}
-//
-// final response = await AutofillService().resultWithDatasets([
-// PwDataset(
-// label: 'user and pass 1',
-// username: 'dummyUsername1',
-// password: 'dpwd1',
-// ),
-// PwDataset(
-// label: 'user and pass 2',
-// username: 'dummyUsername2',
-// password: 'dpwd2',
-// ),
-// PwDataset(
-// label: 'user only',
-// username: 'dummyUsername2',
-// password: '',
-// ),
-// PwDataset(
-// label: 'pass only',
-// username: '',
-// password: 'dpwd2',
-// ),
-// ]);
+//Create the widget to move to
+Future<Widget?> autofillEntryPoint() async {
+  print("AutofillEntryPoint");
 
-Map findMatchingCards(String? username, List packages, List domains) {
-  var matches = {};
-  //Have to have something to match on
-    for (var i in database.cardsInVault.keys) {
-      Map card = database.cardsInVault[i] ?? {};
-      if (username == null ||
-          (card.containsKey('username') && card['username'] == username)) {
-        bool match = false;
+  var _autofillMetadata = await AutofillService().getAutofillMetadata();
+  var _saveRequested = _autofillMetadata?.saveInfo != null;
+  var _fillRequestedAutomatic = await AutofillService().fillRequestedAutomatic;
+  var _fillRequestedInteractive =
+      await AutofillService().fillRequestedInteractive;
 
-        //Check for at least one domain match
-        if (card.containsKey('domains')) {
-          for (var d in card['domains']) {
-            for (var d2 in domains) {
-              if (d2 == d) {
-                match = true;
-              }
-            }
+  var cardData = {};
+  var cardID = '';
+
+  // If we are in save mode, we have to find a card to save it in.
+  if (_saveRequested) {
+    // Show save button.
+    if (_autofillMetadata != null) {
+      var un = _autofillMetadata.saveInfo?.username;
+      var domains = processdomains(_autofillMetadata.webDomains);
+      var pkgs = _autofillMetadata.packageNames;
+
+      if (un != null) {
+        var m = findMatchingCards(un, pkgs.toList(), domains.toList());
+        for (var i in m.keys) {
+          var x = m[i];
+          if (x != null) {
+            cardData.clear();
+            cardData.addAll(x);
+            cardID = i;
           }
-        }
-
-        // Or at least one package match
-        if (card.containsKey('packages')) {
-          for (var d in card['packages']) {
-            for (var d2 in packages) {
-              if (d2 == d) {
-                match = true;
-              }
-            }
-          }
-        }
-
-        if (match) {
-          matches[i] = card;
         }
       }
     }
+    // No card has been found or opened, so we are on a new card with a new ID.
+    if (cardID.length == 0) {
+      cardID = base64Encode(database.urandom(16));
+    }
 
+    if (_autofillMetadata != null &&
+        _autofillMetadata.saveInfo?.username != null) {
+      cardData.putIfAbsent(
+          '\$title', () => _autofillMetadata.saveInfo?.username ?? '');
+
+      cardData['domains'] =  processdomains(_autofillMetadata.webDomains);
+
+      cardData['packages'] = _autofillMetadata.packageNames.toList();
+
+      cardData['password'] = _autofillMetadata.saveInfo?.password ?? '';
+      cardData['username'] = _autofillMetadata.saveInfo?.username ?? '';
+    }
+
+    Logger.root.level = Level.ALL;
+    PrintAppender().attachToLogger(Logger.root);
+    _logger.info('Initialized logger.');
+    return CardActivity('save', cardData, cardID);
+  } else {
+    if (_fillRequestedAutomatic) {
+      List<PwDataset> ds = [];
+      Map<dynamic, Map> c = findMatchingCards(
+          _autofillMetadata?.saveInfo?.username,
+          _autofillMetadata?.packageNames.toList() ?? [],
+          processdomains(_autofillMetadata?.webDomains));
+      for (var i in c.keys) {
+        c[i]?.putIfAbsent('password', () => '');
+        c[i]?.putIfAbsent('username', () => '');
+        c[i]?.putIfAbsent('label', () => c["username"]);
+
+        ds.add(PwDataset(
+            label: c['label'].toString(),
+            username: c['username'].toString(),
+            password: c['password'].toString()));
+      }
+
+      await AutofillService().resultWithDatasets(ds);
+    } else if (_fillRequestedInteractive) {}
+  }
+
+  return null;
+}
+
+Map<String, Map> findMatchingCards(
+    String? username, List packages, List domains) {
+  Map<String, Map> matches = {};
+  //Have to have something to match on
+  for (var i in database.cardsInVault.keys) {
+    Map card = database.cardsInVault[i] ?? {};
+    if (username == null ||
+        (card.containsKey('username') && card['username'] == username)) {
+      bool match = false;
+
+      //Check for at least one domain match
+      if (card.containsKey('domains')) {
+        for (var d in card['domains']) {
+          for (var d2 in domains) {
+            if (d2 == d) {
+              match = true;
+            }
+          }
+        }
+      }
+
+      if(domains.isEmpty)
+        {
+          // Or at least one package match.  But not if there are domains.
+          //Because they we would get matches on the browser itself in site lookups
+          if (card.containsKey('packages')) {
+            for (var d in card['packages']) {
+              for (var d2 in packages) {
+                if (d2 == d) {
+                  match = true;
+                }
+              }
+            }
+          }
+        }
+
+      if (match) {
+        matches[i] = card;
+      }
+    }
+  }
 
   return matches;
+}
+
+askRegenPassword(BuildContext context, Map obj, _CardActivityState s) {
+  // set up the button
+  Widget okButton = ElevatedButton(
+    child: Text("Medium"),
+    onPressed: () {
+      obj['password'] = conv.base64Encode(database.urandom(10));
+      s.wasChanged = true;
+      s._updateStatus();
+      Navigator.of(context, rootNavigator: true)
+          .pop(); // dismisses only the dialog and returns nothing
+    },
+  );
+
+  Widget okButton2 = ElevatedButton(
+    child: Text("Extreme"),
+    onPressed: () {
+      obj['password'] = conv.base64Encode(database.urandom(32));
+      s.wasChanged = true;
+      s._updateStatus();
+      Navigator.of(context, rootNavigator: true)
+          .pop(); // dismisses only the dialog and returns nothing
+    },
+  );
+
+  Widget exitButton = ElevatedButton(
+    child: Text("Cancel"),
+    onPressed: () {
+      Navigator.of(context, rootNavigator: true)
+          .pop(); // dismisses only the dialog and returns nothing
+    },
+  );
+  // set up the AlertDialog
+  AlertDialog alert = AlertDialog(
+    title: Text("Random Password"),
+    content: Text("Select password strength"),
+    actions: [okButton, okButton2, exitButton],
+  );
+  // show the dialog
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return alert;
+    },
+  );
 }
 
 class CardActivity extends StatefulWidget {
   const CardActivity(
       this.launchedByAutofillService, this.cardData, this.cardID);
-  final bool launchedByAutofillService;
+  final String launchedByAutofillService;
   final Map cardData;
   final String cardID;
 
@@ -101,20 +210,19 @@ class CardActivity extends StatefulWidget {
 
 class _CardActivityState extends State<CardActivity>
     with WidgetsBindingObserver {
-  AutofillMetadata? _autofillMetadata;
-  bool? _fillRequestedAutomatic;
-  bool? _fillRequestedInteractive;
-  bool? _saveRequested;
+  String autofillMode = '';
 
   Map cardData = {};
   String cardID = '';
-  
+
   bool wasChanged = false;
 
   @override
   void initState() {
     cardData.addAll(widget.cardData);
     cardID = widget.cardID;
+
+    autofillMode = widget.launchedByAutofillService;
 
     super.initState();
     WidgetsBinding.instance.addObserver(this);
@@ -123,50 +231,13 @@ class _CardActivityState extends State<CardActivity>
 
   // Platform messages are asynchronous, so we initialize in an async method.
   Future<void> _updateStatus() async {
-    _autofillMetadata = await AutofillService().getAutofillMetadata();
-    _saveRequested = _autofillMetadata?.saveInfo != null;
-    _fillRequestedAutomatic = await AutofillService().fillRequestedAutomatic;
-    _fillRequestedInteractive =
-        await AutofillService().fillRequestedInteractive;
-
-    // If we are in save mode, we have to find a card to save it in.
-    if (_saveRequested ?? false) {
-      // Show save button.
-      wasChanged=true;
-      if (_autofillMetadata != null) {
-        var un = _autofillMetadata?.saveInfo?.username;
-        var domains = _autofillMetadata?.webDomains;
-        var pkgs = _autofillMetadata?.packageNames;
-
-        if (un != null) {
-          var m = findMatchingCards(
-              un, pkgs?.toList() ?? [], domains?.toList() ?? []);
-          for (var i in m.keys) {
-            cardData.clear();
-            cardData.addAll(m[i]);
-            cardID = i;
-          }
-        }
-      }
+    if (autofillMode == 'save') {
+      wasChanged = true;
     }
 
     // No card has been found or opened, so we are on a new card with a new ID.
     if (cardID.length == 0) {
       cardID = base64Encode(database.urandom(16));
-    }
-
-    if (_autofillMetadata != null &&
-        (_saveRequested ?? false) &&
-        _autofillMetadata?.saveInfo?.username != null) {
-      cardData.putIfAbsent(
-          '\$title', () => _autofillMetadata?.saveInfo?.username ?? '');
-
-      cardData['domains'] = _autofillMetadata?.webDomains.toList() ?? [];
-
-      cardData['packages'] = _autofillMetadata?.packageNames.toList() ?? [];
-
-      cardData['password'] = _autofillMetadata?.saveInfo?.password ?? '';
-      cardData['username'] = _autofillMetadata?.saveInfo?.username ?? '';
     }
 
     cardData.putIfAbsent('username', () => '');
@@ -216,7 +287,7 @@ class _CardActivityState extends State<CardActivity>
                   initialValue: cardData['\$title'],
                   onChanged: (String text) async {
                     cardData['\$title'] = text;
-                    wasChanged=true;
+                    wasChanged = true;
                     await _updateStatus();
                   }),
               TextFormField(
@@ -226,9 +297,9 @@ class _CardActivityState extends State<CardActivity>
                     labelText: 'URLs',
                   ),
                   initialValue: cardData['domains'].join(';'),
-                  onChanged: (String text) async{
+                  onChanged: (String text) async {
                     cardData['domains'] = text.split(';');
-                    wasChanged=true;
+                    wasChanged = true;
                     await _updateStatus();
                   }),
               TextFormField(
@@ -238,9 +309,9 @@ class _CardActivityState extends State<CardActivity>
                     labelText: 'Apps',
                   ),
                   initialValue: cardData['packages'].join(';'),
-                  onChanged: (String text) async{
+                  onChanged: (String text) async {
                     cardData['packages'] = text.split(';');
-                    wasChanged=true;
+                    wasChanged = true;
                     await _updateStatus();
                   }),
               TextFormField(
@@ -250,9 +321,9 @@ class _CardActivityState extends State<CardActivity>
                     labelText: 'Username',
                   ),
                   initialValue: cardData['username'],
-                  onChanged: (String text) async{
+                  onChanged: (String text) async {
                     cardData['username'] = text;
-                    wasChanged=true;
+                    wasChanged = true;
                     await _updateStatus();
                   }),
               TextFormField(
@@ -261,23 +332,36 @@ class _CardActivityState extends State<CardActivity>
                     hintText: 'Password',
                     labelText: 'Password',
                   ),
+                  obscureText: true,
                   initialValue: cardData['password'],
                   onChanged: (String text) async {
                     cardData['password'] = text;
-                    wasChanged=true;
+                    wasChanged = true;
                     await _updateStatus();
                   }),
-
-            ElevatedButton(
-              child: const Text('Save'),
-              onPressed: () async {
-                _logger.fine('TODO: save the supplied data now.');
-                await database.saveCard(cardID,cardData);
-                wasChanged=false;
-                _logger.fine('save completed');
-                await _updateStatus();
-              }),
-
+              Visibility(
+                  visible: wasChanged,
+                  child: ElevatedButton(
+                      child: const Text('Save'),
+                      onPressed: () async {
+                        _logger.fine('TODO: save the supplied data now.');
+                        await database.saveCard(cardID, cardData);
+                        wasChanged = false;
+                        _logger.fine('save completed');
+                        await _updateStatus();
+                      })),
+              ElevatedButton(
+                child: const Text('Copy Password'),
+                onPressed: () async {
+                  Clipboard.setData(ClipboardData(text: cardData['password']));
+                },
+              ),
+              ElevatedButton(
+                child: const Text('New Password'),
+                onPressed: () async {
+                  askRegenPassword(context, cardData, this);
+                },
+              ),
               ElevatedButton(
                 child: const Text('Back'),
                 onPressed: () async {
@@ -285,23 +369,23 @@ class _CardActivityState extends State<CardActivity>
                 },
               ),
               Visibility(
-                  visible: _fillRequestedInteractive ?? false,
+                  visible: autofillMode == 'manual',
                   child: ElevatedButton(
                     child: const Text('Autofill with this'),
                     onPressed: () async {
                       _logger.fine('Starting request.');
                       final response =
                           await AutofillService().resultWithDataset(
-                        label: 'this is the label 3',
-                        username: 'dummyUsername3',
-                        password: 'dpwd3',
+                        label: cardData['\$title'],
+                        username: cardData['username'],
+                        password: cardData['password'],
                       );
                       _logger.fine('resultWithDatasets $response');
                       await _updateStatus();
                     },
                   )),
               Visibility(
-                visible: (_saveRequested ?? false) && (wasChanged==false),
+                visible: autofillMode == 'save',
                 child: ElevatedButton(
                   child: const Text('Done'),
                   onPressed: () async {

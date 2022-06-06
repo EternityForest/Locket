@@ -198,9 +198,27 @@ Future<saf.UriPermission?> getAndroidFolder() async {
   if (f == null || f.isEmpty) {
     await saf.openDocumentTree(grantWritePermission: true);
   }
+  else{
+    var files = await saf.listFiles(f[0].uri, columns: [
+      saf.DocumentFileColumn.id,
+      saf.DocumentFileColumn.displayName
+    ]).toList();
+    if(files.isEmpty)
+      {
+        // This is quite likely because the permissions are messed up,
+        //so lets start over
+        for(var i in  await saf.persistedUriPermissions()?? <UriPermission>[])
+          {
+            saf.releasePersistableUriPermission(i.uri);
+          }
+        await saf.openDocumentTree(grantWritePermission: true);
+      }
+  }
+
 
   //User may have selected a SAF tree by now
   f = await saf.persistedUriPermissions();
+
   if (f == null || f.isEmpty) {
     return null;
   }

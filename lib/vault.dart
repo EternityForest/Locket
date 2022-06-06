@@ -1,13 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter_autofill_service/flutter_autofill_service.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
-import 'package:logging_appenders/logging_appenders.dart';
 import 'card.dart' as card;
-import 'settings.dart' as settings;
 import 'database.dart' as database;
-import 'login.dart' as login;
 
 final _logger = Logger('main');
 
@@ -75,10 +71,7 @@ class _VaultState extends State<Vault> with WidgetsBindingObserver {
         {
           t = i['url'];
         }
-        if(t==null)
-          {
-            t='NULL';
-          }
+
 
         String d = '';
         if(i.containsKey('domains'))
@@ -97,7 +90,7 @@ class _VaultState extends State<Vault> with WidgetsBindingObserver {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                    builder: (context) => card.CardActivity(false, i, id)),
+                    builder: (context) => card.CardActivity('', i, id)),
               ).then((value){
                 _updateStatus();
               });
@@ -143,7 +136,7 @@ class _VaultState extends State<Vault> with WidgetsBindingObserver {
                       context,
                       MaterialPageRoute(
                           builder: (context) =>
-                          const card.CardActivity(false, {}, '')),
+                          const card.CardActivity('', {}, '')),
                     ).then((value){
                       _updateStatus();
                     });
